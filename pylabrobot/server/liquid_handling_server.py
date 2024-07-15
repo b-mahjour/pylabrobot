@@ -378,7 +378,7 @@ async def config():
 def create_app(lh: LiquidHandler):
   """ Create a Flask app with the given LiquidHandler """
   app = Flask(__name__)
-  cors = CORS(app)
+  # cors = CORS(app)
   app.lh = lh
   app.register_blueprint(lh_api)
   return app
