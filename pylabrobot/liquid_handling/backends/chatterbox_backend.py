@@ -1,8 +1,8 @@
 # pylint: disable=unused-argument
 
-from typing import List
+from typing import List, Union
 
-from pylabrobot.liquid_handling.backends import LiquidHandlerBackend
+from pylabrobot.liquid_handling.backends.backend import LiquidHandlerBackend
 from pylabrobot.resources import Resource
 from pylabrobot.liquid_handling.standard import (
   Pickup,
@@ -11,8 +11,10 @@ from pylabrobot.liquid_handling.standard import (
   DropTipRack,
   Aspiration,
   AspirationPlate,
+  AspirationContainer,
   Dispense,
   DispensePlate,
+  DispenseContainer,
   Move
 )
 
@@ -30,8 +32,10 @@ class ChatterBoxBackend(LiquidHandlerBackend):
     print("Setting up the robot.")
 
   async def stop(self):
-    await super().stop()
     print("Stopping the robot.")
+
+  def serialize(self) -> dict:
+    return {**super().serialize(), "num_channels": self.num_channels}
 
   @property
   def num_channels(self) -> int:
@@ -61,11 +65,19 @@ class ChatterBoxBackend(LiquidHandlerBackend):
   async def drop_tips96(self, drop: DropTipRack, **backend_kwargs):
     print(f"Dropping tips to {drop.resource.name}.")
 
-  async def aspirate96(self, aspiration: AspirationPlate):
-    print(f"Aspirating {aspiration.volume} from {aspiration.resource}.")
+  async def aspirate96(self, aspiration: Union[AspirationPlate, AspirationContainer]):
+    if isinstance(aspiration, AspirationPlate):
+      resource = aspiration.wells[0].parent
+    else:
+      resource = aspiration.container
+    print(f"Aspirating {aspiration.volume} from {resource}.")
 
-  async def dispense96(self, dispense: DispensePlate):
-    print(f"Dispensing {dispense.volume} to {dispense.resource}.")
+  async def dispense96(self, dispense: Union[DispensePlate, DispenseContainer]):
+    if isinstance(dispense, DispensePlate):
+      resource = dispense.wells[0].parent
+    else:
+      resource = dispense.container
+    print(f"Dispensing {dispense.volume} to {resource}.")
 
   async def move_resource(self, move: Move, **backend_kwargs):
     print(f"Moving {move}.")

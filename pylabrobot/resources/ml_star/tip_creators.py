@@ -12,7 +12,7 @@ from pylabrobot.resources.tip import Tip
 
 
 class TipSize(enum.Enum):
-  """ Tip type """
+  """ Tip type. These correspond to the tip types in the FW documentation (see command TT) """
   UNDEFINED=0
   LOW_VOLUME=1
   STANDARD_VOLUME=2
@@ -56,7 +56,8 @@ class HamiltonTip(Tip):
       2: 8,
       3: 8,
       4: 7.55,
-      5: 10
+      5: 10,
+      6: 8
     }[tip_size.value]
 
     super().__init__(
@@ -121,7 +122,7 @@ def standard_volume_tip_with_filter() -> HamiltonTip:
   """ Low volume tip without a filter (`tt01` in venus) """
   return HamiltonTip(
     has_filter=True,
-    total_tip_length=59.9, # 60 in the ctr file, but 59.9 in the log file (519-80)/10
+    total_tip_length=59.9, # 60 in the ctr file, but 59.9 in the log file (519+80)/10
     maximal_volume=360,
     tip_size=TipSize.STANDARD_VOLUME,
     pickup_method=TipPickupMethod.OUT_OF_RACK
@@ -199,5 +200,25 @@ def five_ml_tip() -> HamiltonTip:
     total_tip_length=116,
     maximal_volume=5420,
     tip_size=TipSize.XL,
+    pickup_method=TipPickupMethod.OUT_OF_RACK
+  )
+
+def fifty_ul_tip_with_filter() -> HamiltonTip:
+  """ 50 ul tip with a filter (Hamilton cat. no.: 235948) """
+  return HamiltonTip(
+    has_filter=True,
+    total_tip_length=50.4,
+    maximal_volume=60,
+    tip_size=TipSize.STANDARD_VOLUME,
+    pickup_method=TipPickupMethod.OUT_OF_RACK
+  )
+
+def fifty_ul_tip_no_filter() -> HamiltonTip:
+  """ 50 ul tip with a filter (Hamilton cat. no.: 235966) """
+  return HamiltonTip(
+    has_filter=False,
+    total_tip_length=50.4,
+    maximal_volume=65,
+    tip_size=TipSize.STANDARD_VOLUME,
     pickup_method=TipPickupMethod.OUT_OF_RACK
   )

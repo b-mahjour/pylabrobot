@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.abspath('..'))
 # -- Project information -----------------------------------------------------
 
 project = 'PyLabRobot'
-copyright = '2023, PyLabRobot'
+copyright = '2024, PyLabRobot'
 author = 'The PyLabRobot authors'
 
 
@@ -106,5 +106,3 @@ napoleon_use_ivar = True
 
 nb_execution_mode = 'off'
 myst_enable_extensions = ['dollarmath']
-
-source_suffix = ['.rst', '.md']

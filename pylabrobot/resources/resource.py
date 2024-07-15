@@ -1,20 +1,31 @@
 from __future__ import annotations
 
-import copy
+import itertools
 import json
 import logging
 import sys
-from typing import List, Optional, Type, cast
+from typing import Any, Callable, Dict, List, Optional, cast
 
 from .coordinate import Coordinate
+from .errors import ResourceNotFoundError
+from .rotation import Rotation
 from pylabrobot.serializer import serialize, deserialize
+from pylabrobot.utils.linalg import matrix_vector_multiply_3x3
+from pylabrobot.utils.object_parsing import find_subclass
 
 if sys.version_info >= (3, 11):
   from typing import Self
 else:
   from typing_extensions import Self
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("pylabrobot")
+
+
+WillAssignResourceCallback = Callable[["Resource"], None]
+DidAssignResourceCallback = Callable[["Resource"], None]
+WillUnassignResourceCallback = Callable[["Resource"], None]
+DidUnassignResourceCallback = Callable[["Resource"], None]
+ResourceDidUpdateState = Callable[[Dict[str, Any]], None]
 
 
 class Resource:
@@ -36,13 +47,15 @@ class Resource:
     size_x: float,
     size_y: float,
     size_z: float,
+    rotation: Optional[Rotation] = None,
     category: Optional[str] = None,
-    model: Optional[str] = None
+    model: Optional[str] = None,
   ):
     self._name = name
     self._size_x = size_x
     self._size_y = size_y
     self._size_z = size_z
+    self.rotation = rotation or Rotation()
     self.category = category
     self.model = model
 
@@ -50,7 +63,11 @@ class Resource:
     self.parent: Optional[Resource] = None
     self.children: List[Resource] = []
 
-    self.rotation = 0
+    self._will_assign_resource_callbacks: List[WillAssignResourceCallback] = []
+    self._did_assign_resource_callbacks: List[DidAssignResourceCallback] = []
+    self._will_unassign_resource_callbacks: List[WillUnassignResourceCallback] = []
+    self._did_unassign_resource_callbacks: List[DidUnassignResourceCallback] = []
+    self._resource_state_updated_callbacks: List[ResourceDidUpdateState] = []
 
   def serialize(self) -> dict:
     """ Serialize this resource. """
@@ -61,6 +78,7 @@ class Resource:
       "size_y": self._size_y,
       "size_z": self._size_z,
       "location": serialize(self.location),
+      "rotation": serialize(self.rotation),
       "category": self.category,
       "model": self.model,
       "children": [child.serialize() for child in self.children],
@@ -83,13 +101,6 @@ class Resource:
       raise RuntimeError("Cannot change the name of a resource that is assigned.")
     self._name = name
 
-  def copy(self):
-    """ Copy this resource. """
-    if self.parent is not None:
-      raise ValueError("Cannot copy a resource that is assigned to another resource.")
-
-    return copy.deepcopy(self)
-
   def __eq__(self, other):
     return (
       isinstance(other, Resource) and
@@ -110,38 +121,132 @@ class Resource:
   def __hash__(self) -> int:
     return hash(repr(self))
 
-  def get_absolute_location(self) -> Coordinate:
+  def get_anchor(self, x: str, y: str, z: str) -> Coordinate:
+    """ Get a relative location within the resource.
+
+    Args:
+      x: `"l"`/`"left"`, `"c"`/`"center"`, or `"r"`/`"right"`
+      y: `"b"`/`"back"`, `"c"`/`"center"`, or `"f"`/`"front"`
+      z: `"t"`/`"top"`, `"c"`/`"center"`, or `"b"`/`"bottom"`
+
+    Returns:
+      A relative location within the resource, the anchor point wrt the left front bottom corner.
+
+    Examples:
+      >>> r = Resource("resource", size_x=12, size_y=12, size_z=12)
+      >>> r.get_anchor("l", "b", "t")
+
+      Coordinate(x=0.0, y=12.0, z=12.0)
+
+      >>> r.get_anchor("c", "c", "c")
+
+      Coordinate(x=6.0, y=6.0, z=6.0)
+
+      >>> r.get_anchor("r", "f", "b")
+
+      Coordinate(x=12.0, y=0.0, z=0.0)
+    """
+
+    x_: float
+    if x.lower() in {"l", "left"}:
+      x_ = 0
+    elif x.lower() in {"c", "center"}:
+      x_ = self.get_size_x() / 2
+    elif x.lower() in {"r", "right"}:
+      x_ = self.get_size_x()
+    else:
+      raise ValueError(f"Invalid x value: {x}")
+
+    y_: float
+    if y.lower() in {"b", "back"}:
+      y_ = self.get_size_y()
+    elif y.lower() in {"c", "center"}:
+      y_ = self.get_size_y() / 2
+    elif y.lower() in {"f", "front"}:
+      y_ = 0
+    else:
+      raise ValueError(f"Invalid y value: {y}")
+
+    z_: float
+    if z.lower() in {"t", "top"}:
+      z_ = self.get_size_z()
+    elif z.lower() in {"c", "center"}:
+      z_ = self.get_size_z() / 2
+    elif z.lower() in {"b", "bottom"}:
+      z_ = 0
+    else:
+      raise ValueError(f"Invalid z value: {z}")
+
+    return Coordinate(x_, y_, z_)
+
+  def get_absolute_rotation(self) -> Rotation:
+    """ Get the absolute rotation of this resource. """
+    if self.parent is None:
+      return self.rotation
+    return self.parent.get_absolute_rotation() + self.rotation
+
+  def get_absolute_location(self, x: str = "l", y: str = "f", z: str = "b") -> Coordinate:
     """ Get the absolute location of this resource, probably within the
-    :class:`pylabrobot.resources.Deck`. """
+    :class:`pylabrobot.resources.Deck`. The `x`, `y`, and `z` arguments specify the anchor point
+    within the resource. The default is the left front bottom corner.
+
+    Args:
+      x: `"l"`/`"left"`, `"c"`/`"center"`, or `"r"`/`"right"`
+      y: `"b"`/`"back"`, `"c"`/`"center"`, or `"f"`/`"front"`
+      z: `"t"`/`"top"`, `"c"`/`"center"`, or `"b"`/`"bottom"`
+    """
+
     assert self.location is not None, "Resource has no location."
     if self.parent is None:
       return self.location
-    return self.parent.get_absolute_location() + self.location
+    parent_pos = self.parent.get_absolute_location()
+    parent_rotation_matrix = self.parent.get_absolute_rotation().get_rotation_matrix()
+    local_vector = (self.location + self.get_anchor(x=x, y=y, z=z)).vector()
+    rotated_position = Coordinate(*matrix_vector_multiply_3x3(parent_rotation_matrix, local_vector))
+    return parent_pos + rotated_position
+
+  def _get_rotated_corners(self) -> List[Coordinate]:
+    absolute_rotation = self.get_absolute_rotation()
+    rot_mat = absolute_rotation.get_rotation_matrix()
+    return [
+      Coordinate(*matrix_vector_multiply_3x3(rot_mat, corner.vector()))
+      for corner in [
+        Coordinate(0, 0, 0),
+        Coordinate(self._size_x, 0, 0),
+        Coordinate(0, self._size_y, 0),
+        Coordinate(self._size_x, self._size_y, 0),
+        Coordinate(0, 0, self._size_z),
+        Coordinate(self._size_x, 0, self._size_z),
+        Coordinate(0, self._size_y, self._size_z),
+        Coordinate(self._size_x, self._size_y, self._size_z)
+      ]
+    ]
 
   def get_size_x(self) -> float:
-    if self.rotation in {90, 270}:
-      return self._size_y
-    return self._size_x
+    rotated_corners = self._get_rotated_corners()
+    return max(c.x for c in rotated_corners) - min(c.x for c in rotated_corners)
 
   def get_size_y(self) -> float:
-    if self.rotation in {90, 270}:
-      return self._size_x
-    return self._size_y
+    rotated_corners = self._get_rotated_corners()
+    return max(c.y for c in rotated_corners) - min(c.y for c in rotated_corners)
 
   def get_size_z(self) -> float:
-    """ Get the size of this resource in the z-direction. """
-    return self._size_z
+    rotated_corners = self._get_rotated_corners()
+    return max(c.z for c in rotated_corners) - min(c.z for c in rotated_corners)
 
   def assign_child_resource(
     self,
     resource: Resource,
-    location: Optional[Coordinate],
+    location: Coordinate,
     reassign: bool = True):
     """ Assign a child resource to this resource.
 
-    Will use :meth:`~Resource.resource_assigned_callback` to notify the parent of the assignment,
-    if parent is not `None`. Note that the resource to be assigned may have child resources, in
-    which case you will be responsible for handling any checking, if necessary.
+    Before the resource is assigned, all callbacks registered with
+    :meth:`~Resource.register_will_assign_resource_callback` will be called. If any of these
+    callbacks raises an exception, the resource will not be assigned.
+
+    After the resource is assigned, all callbacks registered with
+    :meth:`~Resource.register_did_assign_resource_callback` will be called.
 
     Args:
       resource: The resource to assign.
@@ -153,17 +258,38 @@ class Resource:
     # Check for unsupported resource assignment operations
     self._check_assignment(resource=resource, reassign=reassign)
 
+    # Call "will assign" callbacks
+    for callback in self._will_assign_resource_callbacks:
+      callback(resource)
+
+    # Modify the tree structure
     resource.parent = self
     resource.location = location
-
-    try:
-      self.resource_assigned_callback(resource) # call callbacks first.
-    except Exception as e:
-      resource.parent = None
-      resource.location = None
-      raise e
-
     self.children.append(resource)
+
+    # Register callbacks on the new child resource so that they can be propagated up the tree.
+    resource.register_will_assign_resource_callback(self._call_will_assign_resource_callbacks)
+    resource.register_did_assign_resource_callback(self._call_did_assign_resource_callbacks)
+    resource.register_will_unassign_resource_callback(self._call_will_unassign_resource_callbacks)
+    resource.register_did_unassign_resource_callback(self._call_did_unassign_resource_callbacks)
+
+    # Call "did assign" callbacks
+    for callback in self._did_assign_resource_callbacks:
+      callback(resource)
+
+  # Helper methods to call all callbacks. These are used to propagate callbacks up the tree.
+  def _call_will_assign_resource_callbacks(self, resource: Resource):
+    for callback in self._will_assign_resource_callbacks:
+      callback(resource)
+  def _call_did_assign_resource_callbacks(self, resource: Resource):
+    for callback in self._did_assign_resource_callbacks:
+      callback(resource)
+  def _call_will_unassign_resource_callbacks(self, resource: Resource):
+    for callback in self._will_unassign_resource_callbacks:
+      callback(resource)
+  def _call_did_unassign_resource_callbacks(self, resource: Resource):
+    for callback in self._did_unassign_resource_callbacks:
+      callback(resource)
 
   def _check_assignment(self, resource: Resource, reassign: bool = True):
     """ Check if the resource assignment produces unsupported or dangerous conflicts. """
@@ -171,7 +297,7 @@ class Resource:
 
     # Check for self assignment
     if resource is self:
-      msgs.append(f"Will not assign resource '{self.name}' to itself.")
+      msgs.append(f"Cannot assign resource '{self.name}' to itself.")
 
     # Check for reassignment to the same (non-null) parent
     if (resource.parent is not None) and (resource.parent is self):
@@ -189,8 +315,6 @@ class Resource:
       msgs.append(f"Will not assign resource '{resource.name}' " +
                   f"that already has a parent: '{resource.parent.name}'.")
 
-    # TODO: write other checks, perhaps recursive or location checks.
-
     if len(msgs) > 0:
       msg = " ".join(msgs)
       raise ValueError(msg)
@@ -198,50 +322,39 @@ class Resource:
   def unassign_child_resource(self, resource: Resource):
     """ Unassign a child resource from this resource.
 
-    Will use :meth:`~Resource.resource_unassigned_callback` to notify the parent of the
-    unassignment, if parent is not `None`.
+    Before the resource is unassigned, all callbacks registered with
+    :meth:`~Resource.register_will_unassign_resource_callback` will be called.
+
+    After the resource is unassigned, all callbacks registered with
+    :meth:`~Resource.register_did_unassign_resource_callback` will be called.
     """
 
     if resource not in self.children:
       raise ValueError(f"Resource with name '{resource.name}' is not a child of this resource "
                        f"('{self.name}').")
 
-    self.resource_unassigned_callback(resource) # call callbacks first.
+    # Call "will unassign" callbacks
+    for callback in self._will_unassign_resource_callbacks:
+      callback(resource)
+
+    # Update the tree structure
     resource.parent = None
     self.children.remove(resource)
+
+    # Delete callbacks on the child resource so that they are not propagated up the tree.
+    resource.deregister_will_assign_resource_callback(self._call_will_assign_resource_callbacks)
+    resource.deregister_did_assign_resource_callback(self._call_did_assign_resource_callbacks)
+    resource.deregister_will_unassign_resource_callback(self._call_will_unassign_resource_callbacks)
+    resource.deregister_did_unassign_resource_callback(self._call_did_unassign_resource_callbacks)
+
+    # Call "did unassign" callbacks
+    for callback in self._did_unassign_resource_callbacks:
+      callback(resource)
 
   def unassign(self):
     """ Unassign this resource from its parent. """
     if self.parent is not None:
       self.parent.unassign_child_resource(self)
-
-  def resource_assigned_callback(self, resource):
-    """ Called when a resource is assigned to this resource.
-
-    May be overridden by subclasses.
-
-    May raise an exception if the resource cannot be assigned to this resource.
-
-    Args:
-      resource: The resource that was assigned.
-    """
-
-    if self.parent is not None:
-      self.parent.resource_assigned_callback(resource)
-
-  def resource_unassigned_callback(self, resource):
-    """ Called when a resource is unassigned from this resource.
-
-    May be overridden by subclasses.
-
-    May raise an exception if the resource cannot be unassigned from this resource.
-
-    Args:
-      resource: The resource that was unassigned.
-    """
-
-    if self.parent is not None:
-      self.parent.resource_unassigned_callback(resource)
 
   def get_all_children(self) -> List[Resource]:
     """ Recursively get all children of this resource. """
@@ -269,72 +382,113 @@ class Resource:
     for child in self.children:
       try:
         return child.get_resource(name)
-      except ValueError:
+      except ResourceNotFoundError:
         pass
 
-    raise ValueError(f"Resource with name '{name}' does not exist.")
+    raise ResourceNotFoundError(f"Resource with name '{name}' does not exist.")
 
-  def get_2d_center_offsets(self, n: int = 1) -> List[Coordinate]:
-    """ Get the offsets (from bottom left) of the center(s) of this resource.
+  def rotate(self, x: float = 0, y: float = 0, z: float = 0):
+    """ Rotate counter-clockwise by the given number of degrees. """
 
-    If `n` is greater than one, the offsets are equally spaced along a column (the y axis), all
-    having the same x and z coordinates. The z coordinate is the bottom of the resource.
+    self.rotation.x = (self.rotation.x + x) % 360
+    self.rotation.y = (self.rotation.y + y) % 360
+    self.rotation.z = (self.rotation.z + z) % 360
 
-    The offsets are returned from high y (back) to low y (front).
-    """
+  def copy(self) -> Self:
+    resource_copy = self.__class__.deserialize(self.serialize())
+    resource_copy.load_all_state(self.serialize_all_state())
+    return resource_copy
 
-    dx = self.get_size_x() / 2
-    dy = self.get_size_y() / (n+1)
-    if dy < 9: # TODO: too specific?
-      raise ValueError(f"Resource is too small to space {n} channels evenly.")
-    offsets = [Coordinate(dx, dy * (i+1), 0) for i in range(n)]
-    return list(reversed(offsets))
+  def rotated(self, x: float = 0, y: float = 0, z: float = 0) -> Self:
+    """ Return a copy of this resource rotated by the given number of degrees. """
 
-  def rotate(self, degrees: int):
-    """ Rotate counter clockwise by the given number of degrees.
-
-    Args:
-      degrees: must be a multiple of 90, but not also 360.
-    """
-
-    effective_degrees = degrees % 360
-
-    if effective_degrees == 0 or effective_degrees % 90 != 0:
-      raise ValueError(f"Invalid rotation: {degrees}")
-
-    for child in self.children:
-      assert child.location is not None, "child must have a location when it's assigned."
-
-      old_x = child.location.x
-
-      if effective_degrees == 90:
-        child.location.x = self.get_size_y() - child.location.y - child.get_size_y()
-        child.location.y = old_x
-      elif effective_degrees == 180:
-        child.location.x = self.get_size_x() - child.location.x - child.get_size_x()
-        child.location.y = self.get_size_y() - child.location.y - child.get_size_y()
-      elif effective_degrees == 270:
-        child.location.x = child.location.y
-        child.location.y = self.get_size_x() - old_x - child.get_size_x()
-      child.rotate(effective_degrees)
-
-    self.rotation = (self.rotation + degrees) % 360
-
-  def rotated(self, degrees: int) -> Self: # type: ignore
-    """ Return a copy of this resource rotated by the given number of degrees.
-
-    Args:
-      degrees: must be a multiple of 90, but not also 360.
-    """
-
-    new_resource = copy.deepcopy(self)
-    new_resource.rotate(degrees)
+    new_resource = self.copy()
+    new_resource.rotate(x=x, y=y, z=z)
     return new_resource
 
-  def center(self) -> Coordinate:
-    """ Get the center of the bottom plane of this resource. """
+  def center(self, x: bool = True, y: bool = True, z: bool = False) -> Coordinate:
+    """ Get the center of this resource.
 
-    return Coordinate(self.get_size_x() / 2, self.get_size_y() / 2, 0)
+    Args:
+      x: If `True`, the x-coordinate will be the center, otherwise it will be 0.
+      y: If `True`, the y-coordinate will be the center, otherwise it will be 0.
+      z: If `True`, the z-coordinate will be the center, otherwise it will be 0.
+
+    Examples:
+      Get the center of a resource in the xy plane:
+
+      >>> r = Resource("resource", size_x=12, size_y=12, size_z=12)
+      >>> r.center()
+
+      Coordinate(x=6.0, y=6.0, z=0.0)
+
+      Get the center of a resource with only the x-coordinate:
+
+      >>> r = Resource("resource", size_x=12, size_y=12, size_z=12)
+      >>> r.center(x=True, y=False, z=False)
+
+      Coordinate(x=6.0, y=0.0, z=0.0)
+
+      Get the center of a resource in the x, y, and z directions:
+
+      >>> r = Resource("resource", size_x=12, size_y=12, size_z=12)
+      >>> r.center(x=True, y=True, z=True)
+
+      Coordinate(x=6.0, y=6.0, z=6.0)
+    """
+
+    return Coordinate(
+      self.get_size_x() / 2 if x else 0,
+      self.get_size_y() / 2 if y else 0,
+      self.get_size_z() / 2 if z else 0
+    )
+
+  def centers(self, xn: int = 1, yn: int = 1, zn: int = 1) -> List[Coordinate]:
+    """ Get equally spaced points in the x, y, and z directions.
+
+    Args:
+      xn: the number of points in the x direction.
+      yn: the number of points in the y direction.
+      zn: the number of points in the z direction.
+
+    Returns:
+      A grid of points in the x, y, and z directions.
+
+    Examples:
+      Get the center of a resource:
+
+      >>> r = Resource("resource", size_x=12, size_y=12, size_z=12)
+      >>> r.centers()
+
+      Coordinate(x=6.0, y=6.0, z=6.0)
+
+      Get the center of a resource with 2 points in the x direction:
+
+      >>> r = Resource("resource", size_x=12, size_y=12, size_z=12)
+      >>> r.centers(xn=2)
+
+      [Coordinate(x=4.0, y=6.0, z=6.0), Coordinate(x=9.0, y=6.0, z=6.0)]
+
+      Get the center of a resource with 2 points in the x and y directions:
+
+      >>> r = Resource("resource", size_x=12, size_y=12, size_z=12)
+      >>> r.centers(xn=2, yn=2)
+      [Coordinate(x=4.0, y=4.0, z=6.0), Coordinate(x=8.0, y=4.0, z=6.0),
+       Coordinate(x=4.0, y=8.0, z=6.0), Coordinate(x=8.0, y=8.0, z=6.0)]
+    """
+
+    def _get_centers(n, dim_size):
+      if n < 0:
+        raise ValueError(f"Invalid number of points: {n}")
+      if n == 0:
+        return [0]
+      return [(i+1) * dim_size/(n+1)  for i in range(n)]
+
+    xs = _get_centers(xn, self.get_size_x())
+    ys = _get_centers(yn, self.get_size_y())
+    zs = _get_centers(zn, self.get_size_z())
+
+    return [Coordinate(x, y, z) for x, y, z in itertools.product(xs, ys, zs)]
 
   def save(self, fn: str, indent: Optional[int] = None):
     """ Save a resource to a JSON file.
@@ -370,7 +524,7 @@ class Resource:
 
     data_copy = data.copy() # copy data because we will be modifying it
 
-    subclass = get_resource_class_from_string(data["type"])
+    subclass = find_subclass(data["type"], cls=Resource)
     if subclass is None:
       raise ValueError(f"Could not find subclass with name '{data['type']}'")
     assert issubclass(subclass, cls) # mypy does not know the type after the None check...
@@ -378,10 +532,12 @@ class Resource:
     for key in ["type", "parent_name", "location"]: # delete meta keys
       del data_copy[key]
     children_data = data_copy.pop("children")
+    rotation = data_copy.pop("rotation")
     resource = subclass(**data_copy)
+    resource.rotation = Rotation.deserialize(rotation)
 
     for child_data in children_data:
-      child_cls = get_resource_class_from_string(child_data["type"])
+      child_cls = find_subclass(child_data["type"], cls=Resource)
       if child_cls is None:
         raise ValueError(f"Could not find subclass with name {child_data['type']}")
       child = child_cls.deserialize(child_data)
@@ -389,7 +545,7 @@ class Resource:
       if location_data is not None:
         location = cast(Coordinate, deserialize(location_data))
       else:
-        location = None
+        raise ValueError(f"Child resource '{child.name}' has no location.")
       resource.assign_child_resource(child, location=location)
 
     return resource
@@ -413,25 +569,123 @@ class Resource:
 
     return cls.deserialize(content)
 
+  def register_will_assign_resource_callback(self, callback: WillAssignResourceCallback):
+    """ Add a callback that will be called before a resource is assigned to this resource. These
+    callbacks can raise errors in case the proposed assignment is invalid. """
+    self._will_assign_resource_callbacks.append(callback)
 
-def get_resource_class_from_string(
-  class_name: str,
-  cls: Type[Resource] = Resource
-) -> Optional[Type[Resource]]:
-  """ Recursively find a subclass with the correct name.
+  def register_did_assign_resource_callback(self, callback: DidAssignResourceCallback):
+    """ Add a callback that will be called after a resource is assigned to this resource. """
+    self._did_assign_resource_callbacks.append(callback)
 
-  Args:
-    class_name: The name of the class to find.
-    cls: The class to search in.
+  def register_will_unassign_resource_callback(self, callback: WillUnassignResourceCallback):
+    """ Add a callback that will be called before a resource is unassigned from this resource. """
+    self._will_unassign_resource_callbacks.append(callback)
 
-  Returns:
-    The class with the given name, or `None` if no such class exists.
-  """
+  def register_did_unassign_resource_callback(self, callback: DidUnassignResourceCallback):
+    """ Add a callback that will be called after a resource is unassigned from this resource. """
+    self._did_unassign_resource_callbacks.append(callback)
 
-  if cls.__name__ == class_name:
-    return cls
-  for subclass in cls.__subclasses__():
-    subclass_ = get_resource_class_from_string(class_name=class_name, cls=subclass)
-    if subclass_ is not None:
-      return subclass_
-  return None
+  def deregister_will_assign_resource_callback(self, callback: WillAssignResourceCallback):
+    """ Remove a callback that will be called before a resource is assigned to this resource. """
+    self._will_assign_resource_callbacks.remove(callback)
+
+  def deregister_did_assign_resource_callback(self, callback: DidAssignResourceCallback):
+    """ Remove a callback that will be called after a resource is assigned to this resource. """
+    self._did_assign_resource_callbacks.remove(callback)
+
+  def deregister_will_unassign_resource_callback(self, callback: WillUnassignResourceCallback):
+    """ Remove a callback that will be called before a resource is unassigned from this resource."""
+    self._will_unassign_resource_callbacks.remove(callback)
+
+  def deregister_did_unassign_resource_callback(self, callback: DidUnassignResourceCallback):
+    """ Remove a callback that will be called after a resource is unassigned from this resource. """
+    self._did_unassign_resource_callbacks.remove(callback)
+
+  # -- state --
+
+  # Developer note: this method serializes the state of this resource only. If you want to serialize
+  # a custom state for a resource, override this method in the subclass.
+  def serialize_state(self) -> Dict[str, Any]:
+    """ Serialize the state of this resource only.
+
+    Use :meth:`pylabrobot.resources.resource.Resource.serialize_all_state` to serialize the state of
+    this resource and all children.
+    """
+    return {}
+
+  # Developer note: you probably don't need to override this method. Instead, override
+  # `serialize_state`.
+  def serialize_all_state(self) -> Dict[str, Dict[str, Any]]:
+    """ Serialize the state of this resource and all children.
+
+    Use :meth:`pylabrobot.resources.resource.Resource.serialize_state` to serialize the state of
+    this resource only.
+
+    Returns:
+      A dictionary where the keys are the names of the resources and the values are the serialized
+      states of the resources.
+    """
+
+    state = {self.name: self.serialize_state()}
+    for child in self.children:
+      state.update(child.serialize_all_state())
+    return state
+
+  # Developer note: this method deserializes the state of this resource only. If you want to
+  # deserialize a custom state for a resource, override this method in the subclass.
+  def load_state(self, state: Dict[str, Any]) -> None:
+    """ Load state for this resource only. """
+    # no state to load by default
+
+  # Developer note: you probably don't need to override this method. Instead, override `load_state`.
+  def load_all_state(self, state: Dict[str, Dict[str, Any]]) -> None:
+    """ Load state for this resource and all children. """
+    for child in self.children:
+      child.load_state(state[child.name])
+      child.load_all_state(state)
+
+  def save_state_to_file(self, fn: str, indent: Optional[int] = None):
+    """ Save the state of this resource and all children to a JSON file.
+
+    Args:
+      fn: File name. Caution: file will be overwritten.
+      indent: Same as `json.dump`'s `indent` argument (for json pretty printing).
+
+    Examples:
+      Saving to a json file:
+
+      >>> deck.save_state_to_file("my_state.json")
+    """
+
+    serialized = self.serialize_all_state()
+    with open(fn, "w", encoding="utf-8") as f:
+      json.dump(serialized, f, indent=indent)
+
+  def load_state_from_file(self, fn: str) -> None:
+    """ Load the state of this resource and all children from a JSON file.
+
+    Args:
+      fn: The file name to load the state from.
+
+    Examples:
+      Loading from a json file:
+
+      >>> deck.load_state_from_file("my_state.json")
+    """
+
+    with open(fn, "r", encoding="utf-8") as f:
+      content = json.load(f)
+    self.load_all_state(content)
+
+  def register_state_update_callback(self, callback: ResourceDidUpdateState):
+    """ Register a callback that will be called when the state of the resource changes. """
+    self._resource_state_updated_callbacks.append(callback)
+
+  def deregister_state_update_callback(self, callback: ResourceDidUpdateState):
+    """ Remove a callback that will be called when the state of the resource changes. """
+    self._resource_state_updated_callbacks.remove(callback)
+
+  def _state_updated(self):
+    for callback in self._resource_state_updated_callbacks:
+      callback(self.serialize_state())

@@ -3,9 +3,10 @@
 
 import unittest
 
-from .carrier import Carrier, TipCarrier, create_homogeneous_carrier_sites
+from .carrier import Carrier, CarrierSite, TipCarrier, create_homogeneous_carrier_sites
 from .coordinate import Coordinate
 from .deck import Deck
+from .errors import ResourceNotFoundError
 from .resource import Resource
 from .tip_rack import TipRack
 
@@ -20,7 +21,7 @@ class CarrierTests(unittest.TestCase):
     self.tip_car = TipCarrier(
       "tip_car",
       size_x=135.0, size_y=497.0, size_z=13.0,
-      sites=create_homogeneous_carrier_sites([
+      sites=create_homogeneous_carrier_sites(klass=CarrierSite, locations=[
           Coordinate(10,   20, 30),
           Coordinate(10,   50, 30),
           Coordinate(10,   80, 30),
@@ -34,7 +35,8 @@ class CarrierTests(unittest.TestCase):
     carrier = Carrier(
       name="carrier",
       size_x=200, size_y=200, size_z=50,
-      sites=create_homogeneous_carrier_sites([Coordinate(5, 5, 5)], site_size_x=10, site_size_y=10)
+      sites=create_homogeneous_carrier_sites(klass=CarrierSite, locations=[Coordinate(5, 5, 5)],
+                                             site_size_x=10, site_size_y=10)
     )
     plate = Resource("plate", size_x=10, size_y=10, size_z=10)
     carrier.assign_resource_to_site(plate, spot=0)
@@ -49,7 +51,8 @@ class CarrierTests(unittest.TestCase):
     carrier = Carrier(
       name="carrier",
       size_x=200, size_y=200, size_z=50,
-      sites=create_homogeneous_carrier_sites([Coordinate(5, 5, 5)], site_size_x=10, site_size_y=10)
+      sites=create_homogeneous_carrier_sites(klass=CarrierSite, locations=[Coordinate(5, 5, 5)],
+                                             site_size_x=10, site_size_y=10)
     )
     plate = Resource("plate", size_x=10, size_y=10, size_z=10)
     carrier.assign_resource_to_site(plate, spot=0)
@@ -65,7 +68,8 @@ class CarrierTests(unittest.TestCase):
     carrier = Carrier(
       name="carrier",
       size_x=200, size_y=200, size_z=50,
-      sites=create_homogeneous_carrier_sites([Coordinate(5, 5, 5)], site_size_x=10, site_size_y=10)
+      sites=create_homogeneous_carrier_sites(klass=CarrierSite, locations=[Coordinate(5, 5, 5)],
+        site_size_x=10, site_size_y=10)
     )
     plate = Resource("plate", size_x=10, size_y=10, size_z=10)
     carrier.assign_resource_to_site(plate, spot=0)
@@ -74,16 +78,17 @@ class CarrierTests(unittest.TestCase):
     deck.assign_child_resource(carrier, location=Coordinate.zero())
 
     self.assertIsNone(plate.parent)
-    with self.assertRaises(ValueError):
+    with self.assertRaises(ResourceNotFoundError):
       carrier.get_resource("plate")
-    with self.assertRaises(ValueError):
+    with self.assertRaises(ResourceNotFoundError):
       deck.get_resource("plate")
 
   def test_assign_index_error(self):
     carrier = Carrier(
       name="carrier",
       size_x=200, size_y=200, size_z=50,
-      sites=create_homogeneous_carrier_sites([Coordinate(5, 5, 5)], site_size_x=10, site_size_y=10)
+      sites=create_homogeneous_carrier_sites(klass=CarrierSite, locations=[Coordinate(5, 5, 5)],
+        site_size_x=10, site_size_y=10)
     )
     plate = Resource("plate", size_x=10, size_y=10, size_z=10)
     with self.assertRaises(IndexError):
@@ -93,7 +98,8 @@ class CarrierTests(unittest.TestCase):
     carrier = Carrier(
       name="carrier",
       size_x=200, size_y=200, size_z=50,
-      sites=create_homogeneous_carrier_sites([Coordinate(5, 5, 5)], site_size_x=10, site_size_y=10)
+      sites=create_homogeneous_carrier_sites(klass=CarrierSite, locations=[Coordinate(5, 5, 5)],
+        site_size_x=10, site_size_y=10)
     )
     carrier.location = Coordinate(10, 10, 10)
     plate = Resource("plate", size_x=10, size_y=10, size_z=10)
@@ -163,12 +169,15 @@ class CarrierTests(unittest.TestCase):
       "size_y": 497.0,
       "size_z": 13.0,
       "location": None,
+      "rotation": {
+        "type": "Rotation",
+        "x": 0, "y": 0, "z": 0
+      },
       "category": "tip_carrier",
       "model": None,
       "parent_name": None,
       "children": [
         {
-          "spot": 0,
           "name": "carrier-tip_car-spot-0",
           "type": "CarrierSite",
           "size_x": 10,
@@ -180,13 +189,16 @@ class CarrierTests(unittest.TestCase):
             "y": 20,
             "z": 30
           },
+          "rotation": {
+            "type": "Rotation",
+            "x": 0, "y": 0, "z": 0
+          },
           "category": "carrier_site",
           "children": [],
           "parent_name": "tip_car",
           "model": None
         },
         {
-          "spot": 1,
           "name": "carrier-tip_car-spot-1",
           "type": "CarrierSite",
           "size_x": 10,
@@ -198,13 +210,16 @@ class CarrierTests(unittest.TestCase):
             "y": 50,
             "z": 30
           },
+          "rotation": {
+            "type": "Rotation",
+            "x": 0, "y": 0, "z": 0
+          },
           "category": "carrier_site",
           "children": [],
           "parent_name": "tip_car",
           "model": None
         },
         {
-          "spot": 2,
           "name": "carrier-tip_car-spot-2",
           "type": "CarrierSite",
           "size_x": 10,
@@ -216,13 +231,16 @@ class CarrierTests(unittest.TestCase):
             "y": 80,
             "z": 30
           },
+          "rotation": {
+            "type": "Rotation",
+            "x": 0, "y": 0, "z": 0
+          },
           "category": "carrier_site",
           "children": [],
           "parent_name": "tip_car",
           "model": None
         },
         {
-          "spot": 3,
           "name": "carrier-tip_car-spot-3",
           "type": "CarrierSite",
           "size_x": 10,
@@ -234,13 +252,16 @@ class CarrierTests(unittest.TestCase):
             "y": 130,
             "z": 30
           },
+          "rotation": {
+            "type": "Rotation",
+            "x": 0, "y": 0, "z": 0
+          },
           "category": "carrier_site",
           "children": [],
           "parent_name": "tip_car",
           "model": None
         },
         {
-          "spot": 4,
           "name": "carrier-tip_car-spot-4",
           "type": "CarrierSite",
           "size_x": 10,
@@ -251,6 +272,10 @@ class CarrierTests(unittest.TestCase):
             "x": 10,
             "y": 160,
             "z": 30
+          },
+          "rotation": {
+            "type": "Rotation",
+            "x": 0, "y": 0, "z": 0
           },
           "category": "carrier_site",
           "children": [],

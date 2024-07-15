@@ -1,6 +1,6 @@
 from typing import Any, Dict, List
 
-from pylabrobot.liquid_handling.backends import LiquidHandlerBackend
+from pylabrobot.liquid_handling.backends.backend import LiquidHandlerBackend
 
 
 class SaverBackend(LiquidHandlerBackend):
@@ -20,7 +20,10 @@ class SaverBackend(LiquidHandlerBackend):
     self.commands_received = []
 
   async def stop(self):
-    await super().stop()
+    pass
+
+  def serialize(self) -> dict:
+    return {**super().serialize(), "num_channels": self.num_channels}
 
   async def send_command(self, command: str, data: Dict[str, Any]):
     self.commands_received.append({"command": command, "data": data})
@@ -59,12 +62,6 @@ class SaverBackend(LiquidHandlerBackend):
 
   async def move_resource(self, *args, **kwargs):
     self.commands_received.append({"command": "move_resource", "args": args, "kwargs": kwargs})
-
-  def serialize(self) -> dict:
-    return {
-      **super().serialize(),
-      "num_channels": self.num_channels,
-    }
 
   # Saver specific methods
 

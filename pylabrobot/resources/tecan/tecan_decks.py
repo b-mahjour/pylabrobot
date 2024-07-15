@@ -1,14 +1,12 @@
-from typing import Callable, Optional, cast
+from typing import Optional, cast
 
-from pylabrobot.resources import (
-  Coordinate,
-  Carrier,
-  Deck,
-  Plate,
-  Resource,
-  TipRack,
-)
-from pylabrobot.resources.tecan import TecanResource
+from pylabrobot.resources.coordinate import Coordinate
+from pylabrobot.resources.carrier import Carrier
+from pylabrobot.resources.deck import Deck
+from pylabrobot.resources.plate import Plate
+from pylabrobot.resources.resource import Resource
+from pylabrobot.resources.tip_rack import TipRack
+from pylabrobot.resources.tecan.tecan_resource import TecanResource
 from pylabrobot.resources.tecan.wash import (
   Wash_Station,
   Wash_Station_Cleaner_shallow,
@@ -46,20 +44,19 @@ class TecanDeck(Deck):
     size_z: float,
     name: str = "deck",
     category: str = "deck",
-    resource_assigned_callback: Optional[Callable] = None,
-    resource_unassigned_callback: Optional[Callable] = None,
     origin: Coordinate = Coordinate(0, 0, 0),
+    with_wash_station: bool = True
   ):
     super().__init__(name=name, size_x=size_x, size_y=size_y, size_z=size_z, category=category,
-      resource_assigned_callback=resource_assigned_callback,
-      resource_unassigned_callback=resource_unassigned_callback, origin=origin)
+      origin=origin)
     self.num_rails = num_rails
 
-    wash = Wash_Station(name="wash_station")
-    wash[0] = Wash_Station_Cleaner_deep(name="wash_clean_deep")
-    wash[1] = Wash_Station_Waste(name="wash_waste")
-    wash[2] = Wash_Station_Cleaner_shallow(name="wash_clean_shallow")
-    self.assign_child_resource(wash, rails=1)
+    if with_wash_station:
+      wash = Wash_Station(name="wash_station")
+      wash[0] = Wash_Station_Cleaner_deep(name="wash_clean_deep")
+      wash[1] = Wash_Station_Waste(name="wash_waste")
+      wash[2] = Wash_Station_Cleaner_shallow(name="wash_clean_shallow")
+      self.assign_child_resource(wash, rails=1)
 
   def serialize(self) -> dict:
     return {
@@ -193,12 +190,8 @@ class TecanDeck(Deck):
 
     return summary_
 
-
-def EVO100Deck( # pylint: disable=invalid-name
-  resource_assigned_callback: Optional[Callable] = None,
-  resource_unassigned_callback: Optional[Callable] = None,
-  origin: Coordinate = Coordinate(0, 0, 0),
-) -> TecanDeck:
+# pylint: disable=invalid-name
+def EVO100Deck(origin: Coordinate = Coordinate(0, 0, 0)) -> TecanDeck:
   """ EVO100 deck.
 
   Sizes from operating manual
@@ -209,16 +202,11 @@ def EVO100Deck( # pylint: disable=invalid-name
       size_x=EVO100_SIZE_X,
       size_y=EVO100_SIZE_Y,
       size_z=EVO100_SIZE_Z,
-      resource_assigned_callback=resource_assigned_callback,
-      resource_unassigned_callback=resource_unassigned_callback,
       origin=origin)
 
 
-def EVO150Deck( # pylint: disable=invalid-name
-  resource_assigned_callback: Optional[Callable] = None,
-  resource_unassigned_callback: Optional[Callable] = None,
-  origin: Coordinate = Coordinate(0, 0, 0),
-) -> TecanDeck:
+# pylint: disable=invalid-name
+def EVO150Deck(origin: Coordinate = Coordinate(0, 0, 0)) -> TecanDeck:
   """ EVO150 deck.
 
   Sizes from operating manual
@@ -229,16 +217,11 @@ def EVO150Deck( # pylint: disable=invalid-name
       size_x=EVO150_SIZE_X,
       size_y=EVO150_SIZE_Y,
       size_z=EVO150_SIZE_Z,
-      resource_assigned_callback=resource_assigned_callback,
-      resource_unassigned_callback=resource_unassigned_callback,
       origin=origin)
 
 
-def EVO200Deck( # pylint: disable=invalid-name
-  resource_assigned_callback: Optional[Callable] = None,
-  resource_unassigned_callback: Optional[Callable] = None,
-  origin: Coordinate = Coordinate(0, 0, 0),
-) -> TecanDeck:
+# pylint: disable=invalid-name
+def EVO200Deck(origin: Coordinate = Coordinate(0, 0, 0)) -> TecanDeck:
   """ EVO200 deck.
 
   Sizes from operating manual
@@ -249,6 +232,4 @@ def EVO200Deck( # pylint: disable=invalid-name
       size_x=EVO200_SIZE_X,
       size_y=EVO200_SIZE_Y,
       size_z=EVO200_SIZE_Z,
-      resource_assigned_callback=resource_assigned_callback,
-      resource_unassigned_callback=resource_unassigned_callback,
       origin=origin)

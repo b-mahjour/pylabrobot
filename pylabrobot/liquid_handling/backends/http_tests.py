@@ -10,7 +10,7 @@ from pylabrobot.resources import (
   PLT_CAR_L5AC_A00,
   TIP_CAR_480_A00,
   HTF_L,
-  Cos_96_EZWash,
+  Cor_96_wellplate_360ul_Fb,
   no_tip_tracking,
   no_volume_tracking
 )
@@ -56,7 +56,7 @@ class TestHTTPBackendOps(unittest.IsolatedAsyncioTestCase):
   """ Tests for liquid handling ops. """
 
   @responses.activate
-  async def asyncSetUp(self) -> None:
+  async def asyncSetUp(self) -> None: # type: ignore
     responses.add(
       responses.POST,
       "http://localhost:8080/events/setup",
@@ -75,7 +75,7 @@ class TestHTTPBackendOps(unittest.IsolatedAsyncioTestCase):
     self.tip_carrier = TIP_CAR_480_A00(name="tip_carrier")
     self.tip_carrier[0] = self.tip_rack = HTF_L(name="tiprack")
     self.plate_carrier = PLT_CAR_L5AC_A00(name="plate_carrier")
-    self.plate_carrier[0] = self.plate = Cos_96_EZWash(name="plate")
+    self.plate_carrier[0] = self.plate = Cor_96_wellplate_360ul_Fb(name="plate")
     self.deck.assign_child_resource(self.tip_carrier, rails=3)
     self.deck.assign_child_resource(self.plate_carrier, rails=15)
 
@@ -85,7 +85,7 @@ class TestHTTPBackendOps(unittest.IsolatedAsyncioTestCase):
     await self.lh.setup()
 
   @responses.activate
-  async def asyncTearDown(self) -> None:
+  async def asyncTearDown(self) -> None: # type: ignore
     await super().asyncTearDown()
     responses.add(
       responses.POST,
@@ -132,7 +132,7 @@ class TestHTTPBackendOps(unittest.IsolatedAsyncioTestCase):
     self.lh.update_head_state({0: self.tip_rack.get_tip("A1")})
     well = self.plate.get_item("A1")
     well.tracker.set_liquids([(None, 10)])
-    await self.lh.aspirate([well], 10)
+    await self.lh.aspirate([well], [10])
 
   @responses.activate
   async def test_dispense(self):
@@ -144,8 +144,9 @@ class TestHTTPBackendOps(unittest.IsolatedAsyncioTestCase):
       status=200,
     )
     self.lh.update_head_state({0: self.tip_rack.get_tip("A1")})
+    self.lh.head[0].get_tip().tracker.add_liquid(None, 10)
     with no_volume_tracking():
-      await self.lh.dispense(self.plate["A1"], 10)
+      await self.lh.dispense(self.plate["A1"], [10])
 
   @responses.activate
   async def test_pick_up_tips96(self):
@@ -160,6 +161,16 @@ class TestHTTPBackendOps(unittest.IsolatedAsyncioTestCase):
 
   @responses.activate
   async def test_drop_tips96(self):
+    # FIXME: pick up tips first, but make nicer.
+    responses.add(
+      responses.POST,
+      "http://localhost:8080/events/pick-up-tips96",
+      match=[header_match],
+      json={"status": "ok"},
+      status=200,
+    )
+    await self.lh.pick_up_tips96(self.tip_rack)
+
     responses.add(
       responses.POST,
       "http://localhost:8080/events/drop-tips96",
@@ -189,7 +200,7 @@ class TestHTTPBackendOps(unittest.IsolatedAsyncioTestCase):
       status=200,
     )
 
-    await self.lh.aspirate_plate(self.plate, 10)
+    await self.lh.aspirate96(self.plate, 10)
 
   @responses.activate
   async def test_dispense96(self):
@@ -203,6 +214,16 @@ class TestHTTPBackendOps(unittest.IsolatedAsyncioTestCase):
     )
     await self.lh.pick_up_tips96(self.tip_rack)
 
+    # FIXME: aspirate first, but make nicer.
+    responses.add(
+      responses.POST,
+      "http://localhost:8080/events/aspirate96",
+      match=[header_match],
+      json={"status": "ok"},
+      status=200,
+    )
+    await self.lh.aspirate96(self.plate, 10)
+
     responses.add(
       responses.POST,
       "http://localhost:8080/events/dispense96",
@@ -211,4 +232,4 @@ class TestHTTPBackendOps(unittest.IsolatedAsyncioTestCase):
       status=200,
     )
 
-    await self.lh.dispense_plate(self.plate, 10)
+    await self.lh.dispense96(self.plate, 10)

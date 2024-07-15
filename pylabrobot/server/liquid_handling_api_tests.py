@@ -1,14 +1,17 @@
+import logging
+from pathlib import Path
 import time
 from typing import cast
 import unittest
 
+from pylabrobot import Config
 from pylabrobot.liquid_handling import LiquidHandler
 from pylabrobot.liquid_handling.backends import SerializingSavingBackend
 from pylabrobot.resources import (
   Plate,
   TipRack,
   HTF_L,
-  Cos_96_EZWash,
+  Cor_96_wellplate_360ul_Fb,
   TIP_CAR_480_A00,
   PLT_CAR_L5AC_A00,
   no_tip_tracking,
@@ -24,7 +27,7 @@ def build_layout() -> HamiltonDeck:
   tip_car[0] = HTF_L(name="tip_rack_01")
 
   plt_car = PLT_CAR_L5AC_A00(name="plate_carrier")
-  plt_car[0] = plate = Cos_96_EZWash(name="aspiration plate")
+  plt_car[0] = plate = Cor_96_wellplate_360ul_Fb(name="aspiration plate")
   plate.get_item("A1").tracker.set_liquids([(None, 400)])
 
   deck = STARLetDeck()
@@ -163,7 +166,7 @@ class LiquidHandlingApiOpsTests(unittest.TestCase):
           "volume": 10,
           "tip": serialize(tip),
           "offset": None,
-          "liquid": None,
+          "liquids": [[None, 10]],
           "flow_rate": None,
           "liquid_height": None,
           "blow_out_air_volume": 0,
@@ -184,10 +187,29 @@ class LiquidHandlingApiOpsTests(unittest.TestCase):
           "volume": 10,
           "tip": serialize(tip),
           "offset": None,
-          "liquid": None,
+          "liquids": [[None, 10]],
           "flow_rate": None,
           "liquid_height": None,
           "blow_out_air_volume": 0,
         }], "use_channels": [0]})
       self.assertIn(response.json.get("status"), {"running", "succeeded"})
       self.assertEqual(response.status_code, 200)
+
+  def test_config(self):
+    cfg = Config(
+      logging=Config.Logging(
+        log_dir=Path("logs"),
+        level=logging.CRITICAL
+      )
+    )
+    with self.app.test_client() as client:
+      logger = logging.getLogger("pylabrobot")
+      cur_level = logger.level
+      response = client.post(
+        self.base_url + "/config",
+        json=cfg.as_dict)
+      new_level = logging.getLogger("pylabrobot").level
+      self.assertEqual(response.json, cfg.as_dict)
+      self.assertEqual(response.status_code, 200)
+      self.assertEqual(new_level, logging.CRITICAL)
+      self.assertNotEqual(cur_level, new_level)

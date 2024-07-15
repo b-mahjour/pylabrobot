@@ -40,3 +40,9 @@ class Coordinate:
     if self.x is not None and self.y is not None and self.z is not None:
       return f"({self.x:07.3f}, {self.y:07.3f}, {self.z:07.3f})"
     return "(None, None, None)"
+
+  def __neg__(self) -> Coordinate:
+    return Coordinate(-self.x, -self.y, -self.z)
+
+  def vector(self) -> list[float]:
+    return [self.x, self.y, self.z]

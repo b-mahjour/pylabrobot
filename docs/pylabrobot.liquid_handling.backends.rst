@@ -1,4 +1,4 @@
-﻿.. currentmodule:: pylabrobot.liquid_handling
+.. currentmodule:: pylabrobot.liquid_handling
 
 pylabrobot.liquid_handling.backends package
 ===========================================
@@ -13,9 +13,8 @@ Abstract
   :nosignatures:
   :recursive:
 
-    pylabrobot.liquid_handling.backends.backend.LiquidHandlerBackend
-    pylabrobot.liquid_handling.backends.serializing_backend.SerializingBackend
-    pylabrobot.liquid_handling.backends.USBBackend.USBBackend
+    backends.backend.LiquidHandlerBackend
+    backends.serializing_backend.SerializingBackend
 
 Hardware
 --------
@@ -25,10 +24,11 @@ Hardware
   :nosignatures:
   :recursive:
 
-    pylabrobot.liquid_handling.backends.hamilton.STAR.HamiltonLiquidHandler
-    pylabrobot.liquid_handling.backends.hamilton.STAR.STAR
-    pylabrobot.liquid_handling.backends.opentrons_backend.OpentronsBackend
-    pylabrobot.liquid_handling.backends.tecan.EVO.EVO
+    backends.hamilton.base.HamiltonLiquidHandler
+    backends.hamilton.STAR.STAR
+    backends.hamilton.vantage.Vantage
+    backends.opentrons_backend.OpentronsBackend
+    backends.tecan.EVO.EVO
 
 Net
 ---
@@ -40,15 +40,16 @@ Net backends can be used to communicate with servers that manage liquid handling
   :nosignatures:
   :recursive:
 
-    pylabrobot.liquid_handling.backends.http.HTTPBackend
-    pylabrobot.liquid_handling.backends.websocket.WebSocketBackend
+    backends.http.HTTPBackend
+    backends.websocket.WebSocketBackend
 
-Simulator
----------
+
+Testing
+-------
 
 .. autosummary::
   :toctree: _autosummary
   :nosignatures:
   :recursive:
 
-    pylabrobot.liquid_handling.backends.simulation.SimulatorBackend
+    backends.chatterbox_backend.ChatterBoxBackend

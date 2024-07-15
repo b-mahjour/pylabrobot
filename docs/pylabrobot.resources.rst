@@ -1,4 +1,4 @@
-﻿.. currentmodule:: pylabrobot
+.. currentmodule:: pylabrobot.resources
 
 pylabrobot.resources package
 ============================
@@ -10,35 +10,60 @@ Resources represent on-deck liquid handling equipment, including tip racks, plat
   :nosignatures:
   :recursive:
 
-    pylabrobot.resources
-    pylabrobot.resources.Coordinate
-    pylabrobot.resources.Deck
-    pylabrobot.resources.ItemizedResource
-    pylabrobot.resources.create_equally_spaced
-    pylabrobot.resources.Lid
-    pylabrobot.resources.Resource
-    pylabrobot.resources.ResourceStack
-    pylabrobot.resources.TipRack
-    pylabrobot.resources.Plate
-    pylabrobot.resources.Carrier
-    pylabrobot.resources.tip.Tip
-    pylabrobot.resources.TipCarrier
-    pylabrobot.resources.PlateCarrier
+    Carrier
+    Container
+    Coordinate
+    Deck
+    ItemizedResource
+    utils.create_equally_spaced_2d
+    Lid
+    Liquid
+    PetriDish
+    Plate
+    PlateCarrier
+    Resource
+    ResourceStack
+    tip.Tip
+    TipCarrier
+    TipRack
+    Trough
+    Tube
+    TubeCarrier
+    TubeRack
+    Well
 
 
-ML Star resources
------------------
+Azenta
+------
 
 .. autosummary::
   :toctree: _autosummary
   :nosignatures:
   :recursive:
 
-    pylabrobot.resources.ml_star
-    pylabrobot.resources.ml_star.tip_creators
-    pylabrobot.resources.ml_star.tip_racks
-    pylabrobot.resources.ml_star.tip_carriers
-    pylabrobot.resources.ml_star.plate_carriers
+    corning_axygen.plates
+
+
+Boekel
+------
+
+.. autosummary::
+  :toctree: _autosummary
+  :nosignatures:
+  :recursive:
+
+    boekel.tube_carriers
+
+
+Corning Axygen
+--------------
+
+.. autosummary::
+  :toctree: _autosummary
+  :nosignatures:
+  :recursive:
+
+    corning_axygen.plates
 
 
 Corning Costar
@@ -49,7 +74,30 @@ Corning Costar
   :nosignatures:
   :recursive:
 
-    pylabrobot.resources.corning_costar.plates
+    corning_costar.plates
+
+
+Falcon
+------
+
+.. autosummary::
+  :toctree: _autosummary
+  :nosignatures:
+  :recursive:
+
+    falcon.tubes
+
+
+Greiner
+-------
+
+.. autosummary::
+  :toctree: _autosummary
+  :nosignatures:
+  :recursive:
+
+    greiner
+    greiner.plates
 
 
 Hamilton
@@ -60,10 +108,75 @@ Hamilton
   :nosignatures:
   :recursive:
 
-    pylabrobot.resources.hamilton
-    pylabrobot.resources.hamilton.hamilton_decks.HamiltonDeck
-    pylabrobot.resources.hamilton.STARDeck
-    pylabrobot.resources.hamilton.STARLetDeck
+    hamilton
+    hamilton.hamilton_decks.HamiltonDeck
+    hamilton.STARDeck
+    hamilton.STARLetDeck
+
+
+Limbro
+------
+
+.. autosummary::
+  :toctree: _autosummary
+  :nosignatures:
+  :recursive:
+
+    limbro
+    limbro.plates
+
+
+ML Star resources
+-----------------
+
+.. autosummary::
+  :toctree: _autosummary
+  :nosignatures:
+  :recursive:
+
+    ml_star
+    ml_star.tip_creators
+    ml_star.tip_racks
+    ml_star.tip_carriers
+    ml_star.plate_carriers
+
+
+Opentrons
+---------
+
+.. autosummary::
+  :toctree: _autosummary
+  :nosignatures:
+  :recursive:
+
+    opentrons
+    opentrons.deck
+    opentrons.load
+    opentrons.plates
+    opentrons.tip_racks
+    opentrons.tube_racks
+
+
+Porvair
+-------
+
+.. autosummary::
+  :toctree: _autosummary
+  :nosignatures:
+  :recursive:
+
+    porvair.plates
+
+
+Revvity
+-------
+
+.. autosummary::
+  :toctree: _autosummary
+  :nosignatures:
+  :recursive:
+
+    revvity.plates
 
 
 
@@ -75,15 +188,26 @@ Tecan
   :nosignatures:
   :recursive:
 
-    pylabrobot.resources.tecan
-    pylabrobot.resources.tecan.plates
-    pylabrobot.resources.tecan.plate_carriers
-    pylabrobot.resources.tecan.tecan_decks
-    pylabrobot.resources.tecan.tecan_resource
-    pylabrobot.resources.tecan.tip_carriers
-    pylabrobot.resources.tecan.tip_creators
-    pylabrobot.resources.tecan.tip_racks
-    pylabrobot.resources.tecan.wash
+    tecan
+    tecan.plates
+    tecan.plate_carriers
+    tecan.tecan_decks
+    tecan.tecan_resource
+    tecan.tip_carriers
+    tecan.tip_creators
+    tecan.tip_racks
+    tecan.wash
+
+
+Thermo Fisher
+-------------
+
+.. autosummary::
+  :toctree: _autosummary
+  :nosignatures:
+  :recursive:
+
+    thermo_fisher.troughs
 
 
 VWR
@@ -94,22 +218,7 @@ VWR
   :nosignatures:
   :recursive:
 
-    pylabrobot.resources.vwr.troughs
-
-
-Opentrons
----------
-
-.. autosummary::
-  :toctree: _autosummary
-  :nosignatures:
-  :recursive:
-
-    pylabrobot.resources.opentrons
-    pylabrobot.resources.opentrons.deck
-    pylabrobot.resources.opentrons.load
-    pylabrobot.resources.opentrons.tip_racks
-    pylabrobot.resources.opentrons.plates
+    vwr.troughs
 
 
 Tip trackers
@@ -122,9 +231,9 @@ See :doc:`Using trackers <using-trackers>` for a tutorial.
   :nosignatures:
   :recursive:
 
-  pylabrobot.resources.no_tip_tracking
-  pylabrobot.resources.set_tip_tracking
-  pylabrobot.resources.tip_tracker.TipTracker
+  no_tip_tracking
+  set_tip_tracking
+  tip_tracker.TipTracker
 
 
 Volume trackers
@@ -137,6 +246,6 @@ See :doc:`Using trackers <using-trackers>` for a tutorial.
   :nosignatures:
   :recursive:
 
-  pylabrobot.resources.no_volume_tracking
-  pylabrobot.resources.set_volume_tracking
-  pylabrobot.resources.volume_tracker.VolumeTracker
+  no_volume_tracking
+  set_volume_tracking
+  volume_tracker.VolumeTracker

@@ -1,10 +1,10 @@
 from abc import ABCMeta
 import sys
-from typing import Union, TypeVar, Generic, List, Optional, Generator, Type, Sequence, cast
+from typing import Union, Tuple, TypeVar, Generic, List, Optional, Generator, Sequence, cast
+from string import ascii_uppercase as LETTERS
 
 import pylabrobot.utils
 
-from .coordinate import Coordinate
 from .resource import Resource
 
 if sys.version_info >= (3, 8):
@@ -44,7 +44,7 @@ class ItemizedResource(Resource, Generic[T], metaclass=ABCMeta):
       size_y: The size of the resource in the y direction.
       size_z: The size of the resource in the z direction.
       items: The items on the resource. See
-        :func:`pylabrobot.resources.create_equally_spaced`. Note that items
+        :func:`pylabrobot.resources.create_equally_spaced_2d`. Note that items
         names will be prefixed with the resource name. Defaults to `[]`.
       num_items_x: The number of items in the x direction. This method can only and must be used if
         `items` is not specified.
@@ -56,18 +56,18 @@ class ItemizedResource(Resource, Generic[T], metaclass=ABCMeta):
     Examples:
 
       Creating a plate with 96 wells with
-      :func:`pylabrobot.resources.create_equally_spaced`:
+      :func:`pylabrobot.resources.create_equally_spaced_2d`:
 
         >>> from pylabrobot.resources import Plate
-        >>> plate = Plate("plate", size_x=1, size_y=1, size_z=1, lid_height=10,
-        ...   items=create_equally_spaced(Well
+        >>> plate = Plate("plate", size_x=1, size_y=1, size_z=1,
+        ...   items=create_equally_spaced_2d(Well
         ...     dx=0, dy=0, dz=0, item_size_x=1, item_size_y=1,
         ...     num_items_x=1, num_items_y=1))
 
       Creating a plate with 1 well with a list:
 
         >>> from pylabrobot.resources import Plate
-        >>> plate = Plate("plate", size_x=1, size_y=1, size_z=1, lid_height=10,
+        >>> plate = Plate("plate", size_x=1, size_y=1, size_z=1,
         ...   items=[[Well("well", size_x=1, size_y=1, size_z=1)]])
     """
 
@@ -92,7 +92,7 @@ class ItemizedResource(Resource, Generic[T], metaclass=ABCMeta):
   def __getitem__(
     self,
     identifier: Union[str, int, Sequence[int], Sequence[str], slice, range]
-    ) -> List[T]:
+  ) -> List[T]:
     """ Get the items with the given identifier.
 
     This is a convenience method for getting the items with the given identifier. It is equivalent
@@ -151,14 +151,14 @@ class ItemizedResource(Resource, Generic[T], metaclass=ABCMeta):
 
     raise TypeError(f"Invalid identifier type: {type(identifier)}")
 
-  def get_item(self, identifier: Union[str, int]) -> T:
+  def get_item(self, identifier: Union[str, int, Tuple[int, int]]) -> T:
     """ Get the item with the given identifier.
 
     Args:
-      identifier: The identifier of the item. Either a string or an integer. If an integer, it is
-        the index of the item in the list of items (counted from 0, top to bottom, left to right).
-        If a string, it uses transposed MS Excel style notation, e.g. "A1" for the first item, "B1"
-        for the item below that, etc.
+      identifier: The identifier of the item. Either a string, an integer, or a tuple. If an
+      integer, it is the index of the item in the list of items (counted from 0, top to bottom, left
+      to right).  If a string, it uses transposed MS Excel style notation, e.g. "A1" for the first
+      item, "B1" for the item below that, etc. If a tuple, it is (row, column).
 
     Returns:
       The item with the given identifier.
@@ -170,6 +170,11 @@ class ItemizedResource(Resource, Generic[T], metaclass=ABCMeta):
 
     if isinstance(identifier, str):
       row, column = pylabrobot.utils.string_to_position(identifier)
+      if not 0 <= row < self.num_items_y or not 0 <= column < self.num_items_x:
+        raise IndexError(f"Identifier '{identifier}' out of range.")
+      identifier = row + column * self.num_items_y
+    elif isinstance(identifier, tuple):
+      row, column = identifier
       if not 0 <= row < self.num_items_y or not 0 <= column < self.num_items_x:
         raise IndexError(f"Identifier '{identifier}' out of range.")
       identifier = row + column * self.num_items_y
@@ -359,6 +364,51 @@ class ItemizedResource(Resource, Generic[T], metaclass=ABCMeta):
 
     return make_generator(indices, batch_size, repeat)
 
+  def __repr__(self) -> str:
+    return (f"{self.__class__.__name__}(name={self.name}, size_x={self._size_x}, "
+            f"size_y={self._size_y}, size_z={self._size_z}, location={self.location})")
+
+  @staticmethod
+  def _occupied_func(item: T):
+    return "O" if item.children else "-"
+
+  def make_grid(self, occupied_func=None):
+    # The "occupied_func" is a function that checks if a resource has something in it,
+    # and returns a single character representing its status.
+    if occupied_func is None:
+      occupied_func = self._occupied_func
+
+    # Make a title with summary information.
+    info_str = repr(self)
+
+    if self.num_items_y > len(LETTERS):
+      # TODO: This will work up to 384-well plates.
+      return info_str + " (too many rows to print)"
+
+    # Calculate the maximum number of digits required for any column index.
+    max_digits = len(str(self.num_items_x))
+
+    # Create the header row with numbers aligned to the columns.
+    # Use right-alignment specifier.
+    header_row = "    " + " ".join(f"{i+1:<{max_digits}}" for i in range(self.num_items_x))
+
+    # Create the item grid with resource absence/presence information.
+    item_grid = [
+      [occupied_func(self.get_item((i, j))) for j in range(self.num_items_x)]
+      for i in range(self.num_items_y)
+    ]
+    spacer = " " * max(1, max_digits)
+    item_list = [LETTERS[i] + ":  " + spacer.join(row) for i, row in enumerate(item_grid)]
+    item_text = "\n".join(item_list)
+
+    # Simple footer with dimensions.
+    footer_text = f"{self.num_items_x}x{self.num_items_y} {self.__class__.__name__}"
+
+    return info_str + "\n" + header_row + "\n" + item_text + "\n" + footer_text
+
+  def print_grid(self, occupied_func=None):
+    print(self.make_grid(occupied_func=occupied_func))
+
   def serialize(self) -> dict:
     return {
       **super().serialize(),
@@ -379,47 +429,3 @@ class ItemizedResource(Resource, Generic[T], metaclass=ABCMeta):
     down, then right. """
 
     return self.get_items(range(self.num_items))
-
-
-def create_equally_spaced(
-    klass: Type[T],
-    num_items_x: int, num_items_y: int,
-    dx: float, dy: float, dz: float,
-    item_dx: float, item_dy: float,
-    **kwargs
-) -> List[List[T]]:
-  """ Make equally spaced resources.
-
-  See :class:`ItemizedResource` for more details.
-
-  Args:
-    klass: The class of the resource to create
-    num_items_x: The number of items in the x direction
-    num_items_y: The number of items in the y direction
-    dx: The bottom left corner for items in the left column
-    dy: The bottom left corner for items in the top row
-    dz: The z coordinate for all items
-    item_dx: The size of the items in the x direction
-    item_dy: The size of the items in the y direction
-    **kwargs: Additional keyword arguments to pass to the resource constructor
-
-  Returns:
-    A list of lists of resources. The outer list contains the columns, and the inner list contains
-    the items in each column.
-  """
-
-  # TODO: It probably makes more sense to transpose this.
-
-  items: List[List[T]] = []
-  for i in range(num_items_x):
-    items.append([])
-    for j in range(num_items_y):
-      name = f"{klass.__name__.lower()}_{i}_{j}"
-      item = klass(
-        name=name,
-        **kwargs
-      )
-      item.location=Coordinate(x=dx + i * item_dx, y=dy + (num_items_y-j-1) * item_dy, z=dz)
-      items[i].append(item)
-
-  return items

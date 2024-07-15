@@ -5,14 +5,10 @@
 # pylint: disable=line-too-long
 
 from typing import List, Optional
-from pylabrobot.resources import (
-  Carrier,
-  CarrierSite,
-  Coordinate,
-  Trash,
-  create_carrier_sites
-)
-from pylabrobot.resources.tecan import TecanResource
+from pylabrobot.resources.carrier import Carrier, CarrierSite, create_carrier_sites
+from pylabrobot.resources.coordinate import Coordinate
+from pylabrobot.resources.trash import Trash
+from pylabrobot.resources.tecan.tecan_resource import TecanResource
 
 
 class TecanWashStation(Carrier, TecanResource):
@@ -51,7 +47,7 @@ def Wash_Station(name: str) -> TecanWashStation:
     size_z=0.0,
     off_x=12.5,
     off_y=24.7,
-    sites=create_carrier_sites(locations = [
+    sites=create_carrier_sites(klass=CarrierSite, locations=[
         Coordinate(12.2, 106.7, 0.0),
         Coordinate(11.0, 180.7, 0.0),
         Coordinate(12.2, 281.7, 0.0),

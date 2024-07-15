@@ -7,7 +7,8 @@ This file defines interfaces for all supported Tecan liquid handling robots.
 from abc import ABCMeta, abstractmethod
 from typing import Dict, List, Optional, Tuple, Sequence, TypeVar, Union
 
-from pylabrobot.liquid_handling.backends.USBBackend import USBBackend
+from pylabrobot.machines.backends import USBBackend
+from pylabrobot.liquid_handling.backends.backend import LiquidHandlerBackend
 from pylabrobot.liquid_handling.liquid_classes.tecan import TecanLiquidClass, get_liquid_class
 from pylabrobot.liquid_handling.backends.tecan.errors import TecanError, error_code_to_exception
 from pylabrobot.liquid_handling.standard import (
@@ -17,8 +18,10 @@ from pylabrobot.liquid_handling.standard import (
   DropTipRack,
   Aspiration,
   AspirationPlate,
+  AspirationContainer,
   Dispense,
   DispensePlate,
+  DispenseContainer,
   Move
 )
 from pylabrobot.resources import (
@@ -34,7 +37,7 @@ from pylabrobot.resources import (
 
 T = TypeVar("T")
 
-class TecanLiquidHandler(USBBackend, metaclass=ABCMeta):
+class TecanLiquidHandler(LiquidHandlerBackend, USBBackend, metaclass=ABCMeta):
   """
   Abstract base class for Tecan liquid handling robot backends.
   """
@@ -53,12 +56,14 @@ class TecanLiquidHandler(USBBackend, metaclass=ABCMeta):
       read_timeout: The timeout for reading from the Tecan machine in seconds.
     """
 
-    super().__init__(
+    USBBackend.__init__(
+      self,
       packet_read_timeout=packet_read_timeout,
       read_timeout=read_timeout,
       write_timeout=write_timeout,
       id_vendor=0x0C47,
       id_product=0x4000)
+    LiquidHandlerBackend.__init__(self)
 
     self._cache: Dict[str, List[Optional[int]]] = {}
 
@@ -245,13 +250,12 @@ class EVO(TecanLiquidHandler):
       self.roma = RoMa(self, EVO.ROMA)
       await self.roma.position_initialization_x()
       # move to home position (TBD) after initialization
-      await self.roma.set_vector_coordinate_position(1, 9000, 2000, 2464, 1800, None, 1, 0)
-      await self.roma.action_move_vector_coordinate_position()
     if self.pnp_connected:
       self.pnp = PnP(self, EVO.PNP)
       await self.pnp.position_initialization_x()
       await self.pnp.position_absolute_x_axis(7000)
 
+      await self._park_roma()
     if self.liha_connected:
       self.liha = LiHa(self, EVO.LIHA)
       await self.liha.position_initialization_x()
@@ -289,6 +293,10 @@ class EVO(TecanLiquidHandler):
     await self.liha.set_z_travel_height([self._z_range] * self.num_channels)
     await self.liha.position_absolute_all_axis(45, 1031, 90, [self._z_range] * self.num_channels)
 
+  async def _park_roma(self):
+    await self.roma.set_vector_coordinate_position(1, 9000, 2000, 2464, 1800, None, 1, 0)
+    await self.roma.action_move_vector_coordinate_position()
+
   # ============== LiquidHandlerBackend methods ==============
 
 
@@ -314,7 +322,7 @@ class EVO(TecanLiquidHandler):
     tecan_liquid_classes = [
       get_liquid_class(
         target_volume=op.volume,
-        liquid_class=op.liquid or Liquid.DMSO,
+        liquid_class=op.liquids[-1][0] or Liquid.WATER,
         tip_type=op.tip.tip_type
       ) if isinstance(op.tip, TecanTip) else None for op in ops]
 
@@ -420,7 +428,7 @@ class EVO(TecanLiquidHandler):
     tecan_liquid_classes = [
       get_liquid_class(
         target_volume=op.volume,
-        liquid_class=op.liquid or Liquid.WATER,
+        liquid_class=op.liquids[-1][0] or Liquid.WATER,
         tip_type=op.tip.tip_type
       ) if isinstance(op.tip, TecanTip) else None for op in ops]
 
@@ -523,10 +531,10 @@ class EVO(TecanLiquidHandler):
   async def drop_tips96(self, drop: DropTipRack):
     raise NotImplementedError()
 
-  async def aspirate96(self, aspiration: AspirationPlate):
+  async def aspirate96(self, aspiration: Union[AspirationPlate, AspirationContainer]):
     raise NotImplementedError()
 
-  async def dispense96(self, dispense: DispensePlate):
+  async def dispense96(self, dispense: Union[DispensePlate, DispenseContainer]):
     raise NotImplementedError()
 
   async def move_resource(self, move: Move):
@@ -542,7 +550,7 @@ class EVO(TecanLiquidHandler):
     z_range = await self.roma.report_z_param(5)
     x, y, z = self._roma_positions(move.resource, move.resource.get_absolute_location(), z_range)
     h = int(move.resource.get_size_y() * 10)
-    xt, yt, zt = self._roma_positions(move.resource, move.to, z_range)
+    xt, yt, zt = self._roma_positions(move.resource, move.destination, z_range)
 
     r_grab = move.get_direction.value * 900
     r_place = move.put_direction.value * 900
@@ -909,7 +917,11 @@ class LiHa(EVOArm):
     for module, pos in EVOArm._pos_cache.items():
       if module == self.module:
         continue
-      if cur_x < pos < x or x < pos < cur_x or abs(pos - x) < 1500:
+      if cur_x < x and cur_x < pos < x: # moving right
+        raise TecanError("Invalid command (collision)", self.module, 2)
+      if cur_x > x and cur_x > pos > x:
+        raise TecanError("Invalid command (collision)", self.module, 2)
+      if abs(pos - x) < 1500:
         raise TecanError("Invalid command (collision)", self.module, 2)
 
     await self.backend.send_command(module=self.module, command="PAA", params=list([x, y, ys] + z))
@@ -1214,7 +1226,11 @@ class RoMa(EVOArm):
     for module, pos in EVOArm._pos_cache.items():
       if module == self.module:
         continue
-      if cur_x < pos < x or x < pos < cur_x or abs(pos - x) < 1500:
+      if cur_x < x and cur_x < pos < x: # moving right
+        raise TecanError("Invalid command (collision)", self.module, 2)
+      if cur_x > x and cur_x > pos > x: # moving left
+        raise TecanError("Invalid command (collision)", self.module, 2)
+      if abs(pos - x) < 1500:
         raise TecanError("Invalid command (collision)", self.module, 2)
 
     await self.backend.send_command(module=self.module, command="SAA",

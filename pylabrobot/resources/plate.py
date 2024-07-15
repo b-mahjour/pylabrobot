@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable, List, Optional, Sequence, Tuple, Union, cast
+from typing import List, Optional, Sequence, Tuple, Union, cast, Literal
 
 
 from .liquid import Liquid
@@ -21,7 +21,9 @@ class Lid(Resource):
     size_x: float,
     size_y: float,
     size_z: float,
-    category: str = "lid"
+    nesting_z_height: float,
+    category: str = "lid",
+    model: Optional[str] = None
   ):
     """ Create a lid for a plate.
 
@@ -30,8 +32,16 @@ class Lid(Resource):
       size_x: Size of the lid in x-direction.
       size_y: Size of the lid in y-direction.
       size_z: Size of the lid in z-direction.
+      nesting_z_height: the overlap in mm between the lid and its parent plate (in the z-direction).
     """
-    super().__init__(name=name, size_x=size_x, size_y=size_y, size_z=size_z, category=category)
+    super().__init__(name=name, size_x=size_x, size_y=size_y, size_z=size_z,category=category,
+                     model=model)
+    self.nesting_z_height = nesting_z_height
+    if nesting_z_height == 0:
+      print(f"{self.name}: Are you certain that the lid nests 0 mm with its parent plate?")
+
+  def serialize(self) -> dict:
+    return {**super().serialize(), "nesting_z_height": self.nesting_z_height}
 
 
 class Plate(ItemizedResource[Well]):
@@ -46,12 +56,10 @@ class Plate(ItemizedResource[Well]):
     items: Optional[List[List[Well]]] = None,
     num_items_x: Optional[int] = None,
     num_items_y: Optional[int] = None,
-    one_dot_max: Optional[float] = 0,
     category: str = "plate",
-    lid_height: float = 0,
-    with_lid: bool = False,
-    compute_volume_from_height: Optional[Callable[[float], float]] = None,
-    model: Optional[str] = None
+    lid: Optional[Lid] = None,
+    model: Optional[str] = None,
+    plate_type: Literal["skirted", "semi-skirted", "non-skirted"] = "skirted",
   ):
     """ Initialize a Plate resource.
 
@@ -70,52 +78,32 @@ class Plate(ItemizedResource[Well]):
       num_items_y: Number of wells in the y direction.
       well_size_x: Size of the wells in the x direction.
       well_size_y: Size of the wells in the y direction.
-      one_dot_max: I don't know. Hamilton specific.
-      lid_height: Height of the lid in mm, only used if `with_lid` is True.
-      with_lid: Whether the plate has a lid.
+      lid: Immediately assign a lid to the plate.
+      plate_type: Type of the plate. One of "skirted", "semi-skirted", or "non-skirted". A
+        WIP: https://github.com/PyLabRobot/pylabrobot/pull/152#discussion_r1625831517
     """
 
     super().__init__(name, size_x, size_y, size_z, items=items, num_items_x=num_items_x,
       num_items_y=num_items_y, category=category, model=model)
-    self.one_dot_max = one_dot_max
     self.lid: Optional[Lid] = None
-    self.lid_height = lid_height
-    self._compute_volume_from_height = compute_volume_from_height
+    self.plate_type = plate_type
 
-    if with_lid:
-      assert lid_height > 0, "Lid height must be greater than 0 if with_lid == True."
-
-      lid = Lid(name + "_lid", size_x=size_x, size_y=size_y, size_z=lid_height)
-      self.assign_child_resource(lid, location=Coordinate(0, 0, self.get_size_z() - lid_height))
-
-  def compute_volume_from_height(self, height: float) -> float:
-    """ Compute the volume of liquid in a well from the height of the liquid.
-
-    Args:
-      height: Height of the liquid in the well.
-
-    Returns:
-      The volume of liquid in the well.
-
-    Raises:
-      NotImplementedError: If the plate does not have a volume computation function.
-    """
-
-    if self._compute_volume_from_height is None:
-      raise NotImplementedError("compute_volume_from_height not implemented.")
-
-    return self._compute_volume_from_height(height)
+    if lid is not None:
+      self.assign_child_resource(lid)
 
   def assign_child_resource(
     self,
     resource: Resource,
-    location: Optional[Coordinate],
+    location: Optional[Coordinate] = None,
     reassign: bool = True
   ):
     if isinstance(resource, Lid):
       if self.has_lid():
         raise ValueError(f"Plate '{self.name}' already has a lid.")
       self.lid = resource
+      location = location or Coordinate(0, 0, self.get_size_z() - self.lid.nesting_z_height)
+    else:
+      assert location is not None, "Location must be specified for if resource is not a lid."
     return super().assign_child_resource(resource, location=location, reassign=reassign)
 
   def unassign_child_resource(self, resource):
@@ -123,18 +111,11 @@ class Plate(ItemizedResource[Well]):
       self.lid = None
     return super().unassign_child_resource(resource)
 
-  def serialize(self):
-    return {
-      **super().serialize(),
-      "one_dot_max": self.one_dot_max,
-    }
-
   def __repr__(self) -> str:
     return (f"{self.__class__.__name__}(name={self.name}, size_x={self._size_x}, "
-            f"size_y={self._size_y}, size_z={self._size_z}, location={self.location}, "
-            f"one_dot_max={self.one_dot_max})")
+            f"size_y={self._size_y}, size_z={self._size_z}, location={self.location})")
 
-  def get_well(self, identifier: Union[str, int]) -> Well:
+  def get_well(self, identifier: Union[str, int, Tuple[int, int]]) -> Well:
     """ Get the item with the given identifier.
 
     See :meth:`~.get_item` for more information.
@@ -155,18 +136,18 @@ class Plate(ItemizedResource[Well]):
     return self.lid is not None
 
   def set_well_liquids(
-      self,
-      liquids: Union[
-        List[List[Tuple["Liquid", float]]],
-        List[Tuple["Liquid", float]],
-        Tuple["Liquid", float]]
-    ) -> None:
+    self,
+    liquids: Union[
+      List[List[Tuple[Optional["Liquid"], Union[int, float]]]],
+      List[Tuple[Optional["Liquid"], Union[int, float]]],
+      Tuple[Optional["Liquid"], Union[int, float]]]
+  ) -> None:
 
     """ Update the liquid in the volume tracker for each well in the plate.
 
     Args:
       liquids: A list of liquids, one for each well in the plate. The list can be a list of lists,
-        where each inner list contains the liquids for each well in a column.  If a single float is
+        where each inner list contains the liquids for each well in a column. If a single tuple is
         given, the volume is assumed to be the same for all wells. Liquids are in uL.
 
     Raises:
@@ -175,7 +156,7 @@ class Plate(ItemizedResource[Well]):
     Example:
       Set the volume of each well in a 96-well plate to 10 uL.
 
-      >>> plate = Plate("plate", 127.0, 86.0, 14.5, num_items_x=12, num_items_y=8)
+      >>> plate = Plate("plate", 127.76, 85.48, 14.5, num_items_x=12, num_items_y=8)
       >>> plate.set_well_liquids((Liquid.WATER, 10))
     """
 
@@ -183,7 +164,7 @@ class Plate(ItemizedResource[Well]):
       liquids = [liquids] * self.num_items
     elif isinstance(liquids, list) and all(isinstance(column, list) for column in liquids):
       # mypy doesn't know that all() checks the type
-      liquids = cast(List[List[Tuple["Liquid", float]]], liquids)
+      liquids = cast(List[List[Tuple[Optional["Liquid"], float]]], liquids)
       liquids = [list(column) for column in zip(*liquids)] # transpose the list of lists
       liquids = [volume for column in liquids for volume in column] # flatten the list of lists
 
@@ -194,3 +175,41 @@ class Plate(ItemizedResource[Well]):
     for i, (liquid, volume) in enumerate(liquids):
       well = self.get_well(i)
       well.tracker.set_liquids([(liquid, volume)]) # type: ignore
+
+  def disable_volume_trackers(self) -> None:
+    """ Disable volume tracking for all wells in the plate. """
+
+    for well in self.get_all_items():
+      well.tracker.disable()
+
+  def enable_volume_trackers(self) -> None:
+    """ Enable volume tracking for all wells in the plate. """
+
+    for well in self.get_all_items():
+      well.tracker.enable()
+
+# TODO: add quadrant definition for 96-well plates & specify current
+# quadrant definition is only for 384-well plates
+  def get_quadrant(self, quadrant: int) -> List[Well]:
+    """ Return the wells in the specified quadrant. Quadrants are overlapping and refer to
+    alternating rows and columns of the plate. Quadrant 1 contains A1, A3, C1, etc. Quadrant 2
+    contains A2, quadrant 3 contains B1, and quadrant 4 contains B2. """
+
+    if quadrant == 1:
+      return [self.get_well((row, column))
+                for row in range(0, self.num_items_y, 2)
+                for column in range(0, self.num_items_x, 2)]
+    elif quadrant == 2:
+      return [self.get_well((row, column))
+                for row in range(0, self.num_items_y, 2)
+                for column in range(1, self.num_items_x, 2)]
+    elif quadrant == 3:
+      return [self.get_well((row, column))
+                for row in range(1, self.num_items_y, 2)
+                for column in range(0, self.num_items_x, 2)]
+    elif quadrant == 4:
+      return [self.get_well((row, column))
+                for row in range(1, self.num_items_y, 2)
+                for column in range(1, self.num_items_x, 2)]
+    else:
+      raise ValueError(f"Invalid quadrant number: {quadrant}. Quadrant must be 1, 2, 3, or 4.")
