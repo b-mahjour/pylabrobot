@@ -314,9 +314,18 @@ class EVO(TecanLiquidHandler):
     tecan_liquid_classes = [
       get_liquid_class(
         target_volume=op.volume,
-        liquid_class=op.liquid or Liquid.WATER,
+        liquid_class=op.liquid or Liquid.DMSO,
         tip_type=op.tip.tip_type
       ) if isinstance(op.tip, TecanTip) else None for op in ops]
+
+    # for op in ops:
+    #   print(op.tip)
+    #   print(isinstance(op.tip, TecanTip))
+    #   lc =       get_liquid_class(
+    #     target_volume=op.volume,
+    #     liquid_class=op.liquid or Liquid.DMSO,
+    #     tip_type=op.tip.tip_type)
+    #   print(lc)
 
     for op, tlc in zip(ops, tecan_liquid_classes):
       # op.volume = tlc.compute_corrected_volume(op.volume) if tlc is not None else op.volume
@@ -535,22 +544,25 @@ class EVO(TecanLiquidHandler):
     h = int(move.resource.get_size_y() * 10)
     xt, yt, zt = self._roma_positions(move.resource, move.to, z_range)
 
+    r_grab = move.get_direction.value * 900
+    r_place = move.put_direction.value * 900
+
     # move to resource
     await self.roma.set_smooth_move_x(1)
     await self.roma.set_fast_speed_x(10000)
     await self.roma.set_fast_speed_y(5000, 1500)
     await self.roma.set_fast_speed_z(1300)
     await self.roma.set_fast_speed_r(5000, 1500)
-    await self.roma.set_vector_coordinate_position(1, x, y, z["safe"], 900, None, 1, 0)
+    await self.roma.set_vector_coordinate_position(1, x, y, z["safe"], r_grab, None, 1, 0)
     await self.roma.action_move_vector_coordinate_position()
     await self.roma.set_smooth_move_x(0)
 
     # pick up resource
     await self.roma.position_absolute_g(900) # TODO: verify
     await self.roma.set_target_window_class(1, 0, 0, 0, 135, 0)
-    await self.roma.set_vector_coordinate_position(1, x, y, z["travel"], 900, None, 1, 1)
+    await self.roma.set_vector_coordinate_position(1, x, y, z["travel"], r_grab, None, 1, 1)
     # TODO verify z param
-    await self.roma.set_vector_coordinate_position(1, x, y, z["end"], 900, None, 1, 0)
+    await self.roma.set_vector_coordinate_position(1, x, y, z["end"], r_grab, None, 1, 0)
     await self.roma.action_move_vector_coordinate_position()
     await self.roma.set_fast_speed_y(3500, 1000)
     await self.roma.set_fast_speed_r(2000, 600)
@@ -563,21 +575,21 @@ class EVO(TecanLiquidHandler):
     await self.roma.set_target_window_class(2, 0, 0, 0, 53, 0)
     await self.roma.set_target_window_class(3, 0, 0, 0, 55, 0)
     await self.roma.set_target_window_class(4, 45, 0, 0, 0, 0)
-    await self.roma.set_vector_coordinate_position(1, x, y, z["end"], 900, None, 1, 1)
-    await self.roma.set_vector_coordinate_position(2, x, y, z["travel"], 900, None, 1, 2)
-    await self.roma.set_vector_coordinate_position(3, x, y, z["safe"], 900, None, 1, 3)
-    await self.roma.set_vector_coordinate_position(4, xt, yt, zt["safe"], 900, None, 1, 4)
-    await self.roma.set_vector_coordinate_position(5, xt, yt, zt["travel"], 900, None, 1, 3)
-    await self.roma.set_vector_coordinate_position(6, xt, yt, zt["end"], 900, None, 1, 0)
+    await self.roma.set_vector_coordinate_position(1, x, y, z["end"], r_grab, None, 1, 1)
+    await self.roma.set_vector_coordinate_position(2, x, y, z["travel"], r_grab, None, 1, 2)
+    await self.roma.set_vector_coordinate_position(3, x, y, z["safe"], r_grab, None, 1, 3)
+    await self.roma.set_vector_coordinate_position(4, xt, yt, zt["safe"], r_place, None, 1, 4)
+    await self.roma.set_vector_coordinate_position(5, xt, yt, zt["travel"], r_place, None, 1, 3)
+    await self.roma.set_vector_coordinate_position(6, xt, yt, zt["end"], r_place, None, 1, 0)
     await self.roma.action_move_vector_coordinate_position()
 
     # release resource
     await self.roma.position_absolute_g(900)
     await self.roma.set_fast_speed_y(5000, 1500)
     await self.roma.set_fast_speed_r(5000, 1500)
-    await self.roma.set_vector_coordinate_position(1, xt, yt, zt["end"], 900, None, 1, 1)
-    await self.roma.set_vector_coordinate_position(2, xt, yt, zt["travel"], 900, None, 1, 2)
-    await self.roma.set_vector_coordinate_position(3, xt, yt, zt["safe"], 900, None, 1, 0)
+    await self.roma.set_vector_coordinate_position(1, xt, yt, zt["end"], r_place, None, 1, 1)
+    await self.roma.set_vector_coordinate_position(2, xt, yt, zt["travel"], r_place, None, 1, 2)
+    await self.roma.set_vector_coordinate_position(3, xt, yt, zt["safe"], r_place, None, 1, 0)
     await self.roma.action_move_vector_coordinate_position()
     await self.roma.set_fast_speed_y(3500, 1000)
     await self.roma.set_fast_speed_r(2000, 600)
@@ -1189,7 +1201,7 @@ class RoMa(EVOArm):
       x: aboslute x position in 1/10 mm
       y: aboslute y position in 1/10 mm
       z: aboslute z position in 1/10 mm
-      r: aboslute r position in 1/10 mm
+      r: aboslute r position in 1/10 deg
       g: aboslute g position in 1/10 mm
       speed: speed select, 0 - slow, 1 - fast
       tw: target window class, set with STW

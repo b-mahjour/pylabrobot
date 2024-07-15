@@ -105,6 +105,56 @@ async def move_plate():
   return add_and_run_task(Task(current_app.lh.move_plate(resource, resource_to)))
 
 
+@lh_api.route("/rinse", methods=["POST"])
+async def rinse_tips():
+
+
+  await current_app.lh.backend._park_liha()
+  # await self.liha.initialize_plunger(self._bin_use_channels(list(range(self.num_channels))))
+  await current_app.lh.backend.liha.position_valve_logical([1] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.move_plunger_relative([100] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.position_valve_logical([0] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.set_end_speed_plunger([1800] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.move_plunger_relative([-100] * current_app.lh.backend.num_channels)
+
+  await current_app.lh.backend.liha.position_valve_logical([1] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.move_plunger_relative([100] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.position_valve_logical([0] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.set_end_speed_plunger([1800] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.move_plunger_relative([-100] * current_app.lh.backend.num_channels)
+
+
+  await current_app.lh.backend.liha.position_valve_logical([1] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.move_plunger_relative([100] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.position_valve_logical([0] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.set_end_speed_plunger([1800] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.move_plunger_relative([-100] * current_app.lh.backend.num_channels)
+
+
+  await current_app.lh.backend.liha.position_absolute_all_axis(45, 1031, 90, [current_app.lh.backend._z_range] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.position_absolute_all_axis(45, 1031, 120, [current_app.lh.backend._z_range] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.position_absolute_all_axis(45, 1031, 90, [current_app.lh.backend._z_range] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.position_absolute_all_axis(45, 1031, 120, [current_app.lh.backend._z_range] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.position_absolute_all_axis(45, 1031, 90, [current_app.lh.backend._z_range] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.position_absolute_all_axis(45, 1031, 120, [current_app.lh.backend._z_range] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.position_absolute_all_axis(45, 1031, 90, [current_app.lh.backend._z_range] * current_app.lh.backend.num_channels)
+
+
+  await current_app.lh.backend.liha.position_absolute_all_axis(45, 1031, 90, [current_app.lh.backend._z_range-150] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.position_absolute_all_axis(45, 1031, 90, [current_app.lh.backend._z_range] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.position_absolute_all_axis(45, 1031, 90, [current_app.lh.backend._z_range-150] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.position_absolute_all_axis(45, 1031, 90, [current_app.lh.backend._z_range] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.position_absolute_all_axis(45, 1031, 90, [current_app.lh.backend._z_range-150] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.position_absolute_all_axis(45, 1031, 90, [current_app.lh.backend._z_range] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.position_absolute_all_axis(45, 1031, 90, [current_app.lh.backend._z_range-150] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.position_absolute_all_axis(45, 1031, 90, [current_app.lh.backend._z_range] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.position_absolute_all_axis(45, 1031, 90, [current_app.lh.backend._z_range-150] * current_app.lh.backend.num_channels)
+  await current_app.lh.backend.liha.position_absolute_all_axis(45, 1031, 90, [current_app.lh.backend._z_range] * current_app.lh.backend.num_channels)
+
+
+  return add_and_run_task(Task(current_app.lh.rinse_tips()))
+
+
 @lh_api.route("/layout", methods=["GET"])
 def get_layout():
   """ API Endpoint to inspect the current design of the deck
